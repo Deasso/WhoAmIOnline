@@ -15,9 +15,15 @@
             margin: 5px;
             cursor: pointer;
         }
-        #roomCode, #players {
+        #roomCode, #players, #identity, #clues, #guessResult {
             font-size: 20px;
             margin: 20px;
+        }
+        #clues {
+            border: 1px solid #ccc;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -30,20 +36,35 @@
     <div id="roomSection" style="display: none;">
         <p>Oda Kodun: <span id="roomCode"></span></p>
         <p>Odadaki Oyuncular: <span id="players"></span></p>
-        <button onclick="startGame()">Oyunu Başlat</button>
+        <button onclick="startGame()" id="startButton">Oyunu Başlat</button>
+        <div id="gameSection" style="display: none;">
+            <p>Senin Kimliğin: <span id="identity"></span></p>
+            <div>
+                <h3>İpuçları</h3>
+                <div id="clues"></div>
+                <input type="text" id="clueInput" placeholder="İpucu yaz">
+                <button onclick="sendClue()">İpucu Gönder</button>
+            </div>
+            <div>
+                <h3>Tahmin Yap</h3>
+                <input type="text" id="guessInput" placeholder="Tahminini yaz">
+                <button onclick="makeGuess()">Tahmin Et</button>
+                <p id="guessResult"></p>
+            </div>
+        </div>
     </div>
     <div id="joinSection" style="display: none;">
         <input type="text" id="roomInput" placeholder="Oda kodunu gir">
         <button onclick="joinRoom()">Katıl</button>
     </div>
 
-    <!-- Firebase SDK (Doğru sürüm ve modül olmayan yapı) -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
     <script>
-        // Firebase yapılandırması (kendi config kodunu buraya yapıştır)
-       const firebaseConfig = {
+        // Firebase yapılandırması
+      const firebaseConfig = {
   apiKey: "AIzaSyAKnZq5H4wdEUeX0q0hcR5zrBOYbKPC9G4",
   authDomain: "whoamionline-722e6.firebaseapp.com",
   databaseURL: "https://whoamionline-722e6-default-rtdb.europe-west1.firebasedatabase.app",
@@ -58,24 +79,37 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // currentRoomCode değişkenini global olarak tanımla
+        // Kimlik listesi
+        const identities = [
+            "Einstein",
+            "Cleopatra",
+            "Messi",
+            "Harry Potter",
+            "Mona Lisa",
+            "Elon Musk",
+            "Marilyn Monroe",
+            "Batman",
+            "Kedi",
+            "Pizza"
+        ];
+
         let currentRoomCode = null;
+        let currentPlayer = null;
 
         function createRoom() {
-            const code = Math.random().toString(36).substring(2, 7).toUpperCase(); // Rastgele oda kodu
+            const code = Math.random().toString(36).substring(2, 7).toUpperCase();
             currentRoomCode = code;
+            currentPlayer = "Oyuncu1";
 
-            // Firebase'e odayı kaydet
             db.ref(`rooms/${code}`).set({
                 createdAt: Date.now(),
-                players: { "Oyuncu1": "Hazır" } // İlk oyuncu olarak seni ekliyoruz
+                players: { "Oyuncu1": "Hazır" }
             });
 
             document.getElementById("mainMenu").style.display = "none";
             document.getElementById("roomSection").style.display = "block";
             document.getElementById("roomCode").textContent = code;
 
-            // Oyuncuları dinle
             listenToPlayers(code);
         }
 
@@ -90,7 +124,8 @@
                 db.ref(`rooms/${enteredCode}`).once("value", (snapshot) => {
                     if (snapshot.exists()) {
                         currentRoomCode = enteredCode;
-                        db.ref(`rooms/${enteredCode}/players`).push("Oyuncu" + Math.floor(Math.random() * 100));
+                        currentPlayer = "Oyuncu" + Math.floor(Math.random() * 100);
+                        db.ref(`rooms/${enteredCode}/players`).push(currentPlayer);
                         document.getElementById("joinSection").style.display = "none";
                         document.getElementById("roomSection").style.display = "block";
                         document.getElementById("roomCode").textContent = enteredCode;
@@ -112,7 +147,75 @@
         }
 
         function startGame() {
-            alert("Oyun başlıyor! (Kimlik atama ve tahmin mekanizması burada eklenecek.)");
+            // Oyunu başlat
+            document.getElementById("startButton").style.display = "none";
+            document.getElementById("gameSection").style.display = "block";
+
+            // Oyunculara kimlik ata
+            db.ref(`rooms/${currentRoomCode}/players`).once("value", (snapshot) => {
+                const players = Object.keys(snapshot.val() || {});
+                const assignments = {};
+
+                players.forEach((player, index) => {
+                    const randomIdentity = identities[Math.floor(Math.random() * identities.length)];
+                    assignments[player] = randomIdentity;
+                });
+
+                // Kimlikleri Firebase'e kaydet
+                db.ref(`rooms/${currentRoomCode}/identities`).set(assignments);
+
+                // Mevcut oyuncunun kimliğini göster
+                db.ref(`rooms/${currentRoomCode}/identities/${currentPlayer}`).once("value", (snapshot) => {
+                    document.getElementById("identity").textContent = snapshot.val();
+                });
+            });
+
+            // İpuçlarını dinle
+            listenToClues();
+        }
+
+        function listenToClues() {
+            db.ref(`rooms/${currentRoomCode}/clues`).on("value", (snapshot) => {
+                const clues = snapshot.val();
+                const cluesDiv = document.getElementById("clues");
+                cluesDiv.innerHTML = "";
+                if (clues) {
+                    Object.entries(clues).forEach(([player, clue]) => {
+                        const clueElement = document.createElement("p");
+                        clueElement.textContent = `${player}: ${clue}`;
+                        cluesDiv.appendChild(clueElement);
+                    });
+                }
+            });
+        }
+
+        function sendClue() {
+            const clueInput = document.getElementById("clueInput").value;
+            if (clueInput) {
+                db.ref(`rooms/${currentRoomCode}/clues/${currentPlayer}`).set(clueInput);
+                document.getElementById("clueInput").value = "";
+            } else {
+                alert("Lütfen bir ipucu yaz!");
+            }
+        }
+
+        function makeGuess() {
+            const guess = document.getElementById("guessInput").value;
+            if (guess) {
+                db.ref(`rooms/${currentRoomCode}/identities/${currentPlayer}`).once("value", (snapshot) => {
+                    const correctIdentity = snapshot.val();
+                    if (guess.toLowerCase() === correctIdentity.toLowerCase()) {
+                        document.getElementById("guessResult").textContent = "Tebrikler! Doğru tahmin ettin!";
+                        document.getElementById("guessResult").style.color = "green";
+                    } else {
+                        document.getElementById("guessResult").textContent = "Yanlış tahmin, tekrar dene!";
+                        document.getElementById("guessResult").style.color = "red";
+                    }
+                });
+                document.getElementById("guessInput").value = "";
+            } else {
+                alert("Lütfen bir tahmin yaz!");
+            }
         }
     </script>
 </body>
