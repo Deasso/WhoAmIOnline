@@ -30,6 +30,8 @@
 <body>
     <h1>Who Am I - Online</h1>
     <div id="mainMenu">
+        <input type="text" id="playerNameInput" placeholder="İsminizi girin">
+        <br>
         <button onclick="createRoom()">Oda Oluştur</button>
         <button onclick="showJoinRoom()">Odaya Katıl</button>
     </div>
@@ -54,6 +56,8 @@
         </div>
     </div>
     <div id="joinSection" style="display: none;">
+        <input type="text" id="joinPlayerNameInput" placeholder="İsminizi girin">
+        <br>
         <input type="text" id="roomInput" placeholder="Oda kodunu gir">
         <button onclick="joinRoom()">Katıl</button>
     </div>
@@ -64,7 +68,7 @@
 
     <script>
         // Firebase yapılandırması
-      const firebaseConfig = {
+       const firebaseConfig = {
   apiKey: "AIzaSyAKnZq5H4wdEUeX0q0hcR5zrBOYbKPC9G4",
   authDomain: "whoamionline-722e6.firebaseapp.com",
   databaseURL: "https://whoamionline-722e6-default-rtdb.europe-west1.firebasedatabase.app",
@@ -97,13 +101,19 @@
         let currentPlayer = null;
 
         function createRoom() {
+            const playerName = document.getElementById("playerNameInput").value.trim();
+            if (!playerName) {
+                alert("Lütfen bir isim girin!");
+                return;
+            }
+
             const code = Math.random().toString(36).substring(2, 7).toUpperCase();
             currentRoomCode = code;
-            currentPlayer = "Oyuncu1";
+            currentPlayer = playerName;
 
             db.ref(`rooms/${code}`).set({
                 createdAt: Date.now(),
-                players: { "Oyuncu1": "Hazır" }
+                players: { [playerName]: "Hazır" }
             });
 
             document.getElementById("mainMenu").style.display = "none";
@@ -119,24 +129,39 @@
         }
 
         function joinRoom() {
+            const playerName = document.getElementById("joinPlayerNameInput").value.trim();
             const enteredCode = document.getElementById("roomInput").value.toUpperCase();
-            if (enteredCode) {
-                db.ref(`rooms/${enteredCode}`).once("value", (snapshot) => {
-                    if (snapshot.exists()) {
-                        currentRoomCode = enteredCode;
-                        currentPlayer = "Oyuncu" + Math.floor(Math.random() * 100);
-                        db.ref(`rooms/${enteredCode}/players`).push(currentPlayer);
-                        document.getElementById("joinSection").style.display = "none";
-                        document.getElementById("roomSection").style.display = "block";
-                        document.getElementById("roomCode").textContent = enteredCode;
-                        listenToPlayers(enteredCode);
-                    } else {
-                        alert("Geçersiz oda kodu!");
-                    }
-                });
-            } else {
-                alert("Lütfen bir oda kodu gir!");
+
+            if (!playerName) {
+                alert("Lütfen bir isim girin!");
+                return;
             }
+            if (!enteredCode) {
+                alert("Lütfen bir oda kodu girin!");
+                return;
+            }
+
+            db.ref(`rooms/${enteredCode}`).once("value", (snapshot) => {
+                if (snapshot.exists()) {
+                    currentRoomCode = enteredCode;
+                    currentPlayer = playerName;
+
+                    // Aynı isimde başka bir oyuncu var mı kontrol et
+                    const players = snapshot.val().players || {};
+                    if (Object.keys(players).includes(playerName)) {
+                        alert("Bu isim zaten kullanılıyor, lütfen başka bir isim seçin!");
+                        return;
+                    }
+
+                    db.ref(`rooms/${enteredCode}/players/${playerName}`).set("Hazır");
+                    document.getElementById("joinSection").style.display = "none";
+                    document.getElementById("roomSection").style.display = "block";
+                    document.getElementById("roomCode").textContent = enteredCode;
+                    listenToPlayers(enteredCode);
+                } else {
+                    alert("Geçersiz oda kodu!");
+                }
+            });
         }
 
         function listenToPlayers(roomCode) {
@@ -147,6 +172,8 @@
         }
 
         function startGame() {
+            console.log("Oyun başlatılıyor..."); // Hata ayıklama için log
+
             // Oyunu başlat
             document.getElementById("startButton").style.display = "none";
             document.getElementById("gameSection").style.display = "block";
@@ -154,24 +181,43 @@
             // Oyunculara kimlik ata
             db.ref(`rooms/${currentRoomCode}/players`).once("value", (snapshot) => {
                 const players = Object.keys(snapshot.val() || {});
-                const assignments = {};
+                console.log("Oyuncular:", players); // Hata ayıklama için log
 
-                players.forEach((player, index) => {
+                if (players.length < 2) {
+                    alert("Oyunu başlatmak için en az 2 oyuncu gerekli!");
+                    document.getElementById("startButton").style.display = "block";
+                    document.getElementById("gameSection").style.display = "none";
+                    return;
+                }
+
+                const assignments = {};
+                players.forEach((player) => {
                     const randomIdentity = identities[Math.floor(Math.random() * identities.length)];
                     assignments[player] = randomIdentity;
                 });
 
                 // Kimlikleri Firebase'e kaydet
-                db.ref(`rooms/${currentRoomCode}/identities`).set(assignments);
+                db.ref(`rooms/${currentRoomCode}/identities`).set(assignments).then(() => {
+                    console.log("Kimlikler atandı:", assignments); // Hata ayıklama için log
 
-                // Mevcut oyuncunun kimliğini göster
-                db.ref(`rooms/${currentRoomCode}/identities/${currentPlayer}`).once("value", (snapshot) => {
-                    document.getElementById("identity").textContent = snapshot.val();
+                    // Mevcut oyuncunun kimliğini göster
+                    db.ref(`rooms/${currentRoomCode}/identities/${currentPlayer}`).once("value", (snapshot) => {
+                        const playerIdentity = snapshot.val();
+                        if (playerIdentity) {
+                            document.getElementById("identity").textContent = playerIdentity;
+                        } else {
+                            console.error("Kimlik alınamadı!");
+                        }
+                    });
+                }).catch((error) => {
+                    console.error("Kimlik atama hatası:", error);
                 });
-            });
 
-            // İpuçlarını dinle
-            listenToClues();
+                // İpuçlarını dinle
+                listenToClues();
+            }).catch((error) => {
+                console.error("Oyuncuları alma hatası:", error);
+            });
         }
 
         function listenToClues() {
