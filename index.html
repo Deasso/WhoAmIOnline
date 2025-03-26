@@ -37,9 +37,9 @@
         <button onclick="joinRoom()">Katıl</button>
     </div>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js"></script>
+    <!-- Firebase SDK (Doğru sürüm ve modül olmayan yapı) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
     <script>
         // Firebase yapılandırması (kendi config kodunu buraya yapıştır)
@@ -57,6 +57,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // currentRoomCode değişkenini global olarak tanımla
         let currentRoomCode = null;
 
         function createRoom() {
